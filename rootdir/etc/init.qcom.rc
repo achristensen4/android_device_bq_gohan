@@ -62,7 +62,7 @@ on init
 on early-boot
     # set RLIMIT_MEMLOCK to 64MB
     setrlimit 8 67108864 67108864
-    write /sys/block/dm-0/queue/read_ahead_kb 2048
+    write /sys/block/dm-0/queue/read_ahead_kb 0
     # Allow subsystem (modem etc) debugging
     write /sys/module/subsystem_restart/parameters/enable_debug ${persist.sys.ssr.enable_debug}
     write /sys/module/pil_msa/parameters/pbl_mba_boot_timeout_ms ${persist.sys.mba_boot_timeout}
@@ -172,10 +172,6 @@ on boot
     setprop net.tcp.buffersize.hsupa   4094,87380,1220608,4096,16384,1220608
     setprop net.tcp.buffersize.hsdpa   4094,87380,1220608,4096,16384,1220608
     setprop net.tcp.buffersize.hspap   4094,87380,1220608,4096,16384,1220608
-    setprop net.tcp.buffersize.edge    4093,26280,35040,4096,16384,35040
-    setprop net.tcp.buffersize.gprs    4092,8760,11680,4096,8760,11680
-    setprop net.tcp.buffersize.evdo    4094,87380,524288,4096,16384,262144
-
     setprop net.tcp.2g_init_rwnd 10
 
 #   Assign TCP buffer thresholds to be ceiling value of technology maximums
@@ -270,8 +266,8 @@ on fs
     restorecon_recursive   /dsp
 
     wait /dev/block/bootdevice/by-name/modem
-    mount vfat /dev/block/bootdevice/by-name/modem /firmware ro context=u:object_r:firmware_file:s0,shortname=lower,uid=1000,gid=1000,dmask=227,fmask=337
-    #write /sys/kernel/boot_adsp/boot 1
+    mount vfat /dev/block/bootdevice/by-name/modem /firmware rw context=u:object_r:firmware_file:s0,shortname=lower,uid=1000,gid=1000,dmask=227,fmask=337
+    write /sys/kernel/boot_adsp/boot 1
 
 on post-fs
     export LD_PRELOAD libNimsWrap.so
@@ -349,7 +345,7 @@ on post-fs-data
 
     #Create the symlink to qcn wpa_supplicant folder for ar6000 wpa_supplicant
     mkdir /data/system 0775 system system
-    #symlink /data/misc/wifi/wpa_supplicant /data/system/wpa_supplicant
+    symlink /data/misc/wifi/wpa_supplicant /data/system/wpa_supplicant
 
     #Create directories for Location services
     mkdir /data/misc/location 0770 gps gps
@@ -434,10 +430,6 @@ on post-fs-data
     mkdir /data/misc/qti-logkit/socket-public/ 2750 system qcom_diag
     mkdir /data/misc/qti-logkit/logdata/ 2750 system shell
 
-    # Tap To Wake
-    chown root system /sys/devices/soc.0/7af6000.i2c/i2c-6/6-0020/input/input0/wake_gesture
-    chmod 0660 /sys/devices/soc.0/7af6000.i2c/i2c-6/6-0020/input/input0/wake_gesture
-
 service qfintverify /sbin/qfintverify
     user root
     class core
@@ -451,7 +443,7 @@ service qcomsysd /system/bin/qcom-system-daemon
 
 on property:sys.boot_completed=1
     write /dev/kmsg "Boot completed "
-    write /sys/block/dm-0/queue/read_ahead_kb 128
+    write /sys/block/dm-0/queue/read_ahead_kb 0
 
     # CPE fw_name used by sound trigger HAL
     chown media audio /sys/kernel/wcd_cpe0/fw_name
@@ -468,7 +460,7 @@ on property:init.svc.wpa_supplicant=stopped
     stop dhcpcd
 
 on property:bluetooth.isEnabled=true
-    write /sys/class/bluetooth/hci0/idle_timeout 7000
+    write /sys/class/bluetooth/hci0/idle_timeout 0
 
 on property:bluetooth.dun.status=running
     start bt-dun
@@ -489,7 +481,7 @@ on property:persist.env.fastdorm.enabled=true
     setprop persist.radio.data_no_toggle 1
 
 service cnd /system/bin/cnd
-    class late_start
+    class main
     socket cnd stream 660 root inet
 
 service dpmd /system/bin/dpmd
@@ -516,15 +508,14 @@ service config_bt_addr /system/bin/btnvtool -O
     oneshot
 
 service qcom-sh /system/bin/sh /init.qcom.sh
-    class late_start
+    class main
     user root
     oneshot
 
 service hciattach /system/bin/sh /system/etc/init.qcom.bt.sh
-    class late_start
+    class main
     user bluetooth
     group bluetooth net_bt_admin
-    disabled
     oneshot
 
 on property:bluetooth.hciattach=true
@@ -534,17 +525,15 @@ on property:bluetooth.hciattach=false
     setprop bluetooth.status off
 
 service bt-dun /system/bin/dun-server /dev/smd7 /dev/rfcomm0
-    class late_start
+    class main
     user bluetooth
     group bluetooth net_bt_admin inet
-    disabled
     oneshot
 
 service port-bridge /system/bin/port-bridge /dev/mhi_pipe_32 /dev/ttyGS0
     class main
     user radio system
     group radio system inet
-    disabled
     oneshot
 
 # QMUX must be in multiple groups to support external process connections
@@ -573,10 +562,9 @@ service qti /system/vendor/bin/qti
     group radio net_raw qcom_diag usb net_admin
 
 service sensors /system/bin/sensors.qcom
-    class late_start
+    class main
     user root
     group root
-    disabled
 
 on property:ro.use_data_netmgrd=false
     # netmgr not supported on specific target
@@ -590,95 +578,82 @@ on property:ro.data.large_tcp_window_size=true
 on property:sys.sysctl.tcp_adv_win_scale=*
     write /proc/sys/net/ipv4/tcp_adv_win_scale ${sys.sysctl.tcp_adv_win_scale}
 
-service p2p_supplicant /system/bin/wpa_supplicant \
-    -ip2p0 -Dnl80211 -c/data/misc/wifi/p2p_supplicant.conf \
-    -I/system/etc/wifi/p2p_supplicant_overlay.conf -N \
-    -iwlan0 -Dnl80211 -c/data/misc/wifi/wpa_supplicant.conf \
-    -I/system/etc/wifi/wpa_supplicant_overlay.conf \
-    -O/data/misc/wifi/sockets -puse_p2p_group_interface=1 \
+service p2p_supplicant /system/bin/wpa_supplicant
+    -ip2p0 -Dnl80211 -c/data/misc/wifi/p2p_supplicant.conf
+    -I/system/etc/wifi/p2p_supplicant_overlay.conf -N
+    -iwlan0 -Dnl80211 -c/data/misc/wifi/wpa_supplicant.conf
+    -I/system/etc/wifi/wpa_supplicant_overlay.conf
+    -O/data/misc/wifi/sockets -puse_p2p_group_interface=1
     -e/data/misc/wifi/entropy.bin -g@android:wpa_wlan0
 #   we will start as root and wpa_supplicant will switch to user wifi
 #   after setting up the capabilities required for WEXT
-#   user wifi
-#   group wifi inet keystore
+    user wifi
+    group wifi inet keystore
     class main
     socket wpa_wlan0 dgram 660 wifi wifi
-    disabled
     oneshot
 
-service wpa_supplicant /system/bin/wpa_supplicant \
-    -iwlan0 -Dnl80211 -c/data/misc/wifi/wpa_supplicant.conf \
-    -I/system/etc/wifi/wpa_supplicant_overlay.conf \
-    -O/data/misc/wifi/sockets \
+service wpa_supplicant /system/bin/wpa_supplicant
+    -iwlan0 -Dnl80211 -c/data/misc/wifi/wpa_supplicant.conf
+    -I/system/etc/wifi/wpa_supplicant_overlay.conf
+    -O/data/misc/wifi/sockets
     -e/data/misc/wifi/entropy.bin -g@android:wpa_wlan0
     #   we will start as root and wpa_supplicant will switch to user wifi
     #   after setting up the capabilities required for WEXT
-    #   user wifi
-    #   group wifi inet keystore
+    user wifi
+    group wifi inet keystore
     class main
     socket wpa_wlan0 dgram 660 wifi wifi
-    disabled
     oneshot
 
 service dhcpcd_wlan0 /system/bin/dhcpcd -ABKLG
-    class late_start
-    disabled
+    class main
     oneshot
 
 service dhcpcd_p2p /system/bin/dhcpcd -ABKLG
-    class late_start
-    disabled
+    class main
     oneshot
 
 service iprenew_wlan0 /system/bin/dhcpcd -n
-    class late_start
-    disabled
+    class main
     oneshot
 
 service iprenew_p2p /system/bin/dhcpcd -n
-    class late_start
-    disabled
+    class main
     oneshot
 
 on property:wifi.ftmd.load=true
     insmod /system/lib/modules/wlan.ko con_mode=5
 
 service cnss-daemon /system/bin/cnss-daemon -n -l
-    class late_start
+    class main
 
 service dhcpcd_bt-pan /system/bin/dhcpcd -BKLG
-    class late_start
-    disabled
+    class main
     oneshot
 
 service iprenew_bt-pan /system/bin/dhcpcd -n
-    class late_start
-    disabled
+    class main
     oneshot
 
 service dhcpcd_bnep0 /system/bin/dhcpcd -BKLG
-    disabled
     oneshot
 
 service dhcpcd_bnep1 /system/bin/dhcpcd -BKLG
-    disabled
     oneshot
 
 service dhcpcd_bnep2 /system/bin/dhcpcd -BKLG
-    disabled
     oneshot
 
 service dhcpcd_bnep3 /system/bin/dhcpcd -BKLG
-    disabled
     oneshot
 
 service dhcpcd_bnep4 /system/bin/dhcpcd -BKLG
-    disabled
     oneshot
 
 service loc_launcher /system/bin/loc_launcher
     #loc_launcher will start as root and set its uid to gps
-    class late_start
+    class main
     group gps inet net_raw qcom_diag net_admin wifi
 
 on property:crypto.driver.load=1
@@ -686,20 +661,18 @@ on property:crypto.driver.load=1
     insmod /system/lib/modules/qcedev.ko
 
 service atfwd /system/bin/ATFWD-daemon
-    class late_start
+    class main
     user system
-    disabled
     group system radio
 
 on property:sys.boot_completed=1
     start atfwd
 
 service hostapd /system/bin/hostapd -dd /data/misc/wifi/hostapd.conf
-    class late_start
+    class main
     user root
     group root
     oneshot
-    disabled
 
 on property:ro.data.large_tcp_window_size=true
     # Adjust socket buffer to enlarge TCP receive window for high bandwidth (e.g. DO-RevB)
@@ -729,40 +702,34 @@ on property:persist.usb.hvdcp.detect=false
     stop hvdcp
 
 service qbcharger /charger -m 1
-    disabled
     oneshot
 
 on property:sys.qbcharger.enable=true
-    write /sys/power/wake_lock QuickBoot
     start qbcharger
 
 on property:sys.qbcharger.enable=false
-    write /sys/power/wake_unlock QuickBoot
     stop qbcharger
 
 service msm_irqbal_lb /system/bin/msm_irqbalance -f /system/vendor/etc/msm_irqbalance_little_big.conf
     class core
     user root
     group root
-    disabled
-    writepid /dev/cpuset/system-background/tasks
 
 service gx_fpd /system/bin/gx_fpd
-    class late_start
+    class main
     user system
     group system
 
 service fingerprintd /system/bin/fingerprintd
-    class late_start
+    class main
     socket fpce stream 0666 system system
     user system
 
 #start camera server as daemon
 service qcamerasvr /system/bin/mm-qcamera-daemon
-   class late_start
+   class main
    user camera
    group camera system inet input graphics
-   writepid /dev/cpuset/system-background/tasks
 
 service adsprpcd /system/bin/adsprpcd
     class main
@@ -775,8 +742,7 @@ service per_mgr /system/bin/pm-service
     group system net_raw
 
 service ppd /system/vendor/bin/mm-pp-daemon
-    class late_start
-    disabled
+    class main
     user system
     socket pps stream 0660 system system
     group system graphics
@@ -788,20 +754,19 @@ on property:init.svc.surfaceflinger=running
     start ppd
 
 service wcnss-service /system/bin/wcnss_service
-   class late_start
+   class main
    user system
    group system wifi radio
    oneshot
 
 service set_sn /system/bin/adjust_serialno setsn
-    disable
     oneshot
 
 on property:sys.sn_set=1
     start set_sn
 
 service RIDL /system/vendor/bin/RIDLClient.exe
-    class late_start
+    class main
     oneshot
     user system
     group system inet log sdcard_r sdcard_rw qcom_diag
@@ -809,40 +774,31 @@ service RIDL /system/vendor/bin/RIDLClient.exe
     # limited to 12 groups.  Unused: audio usb net_bt_admin net_bt_stac net_raw net_admin
 
 service qseeproxydaemon /system/vendor/bin/qseeproxydaemon
-    class late_start
+    class main
     user system
     group system
 
 # service for USER
 service LKCore-rel /system/vendor/bin/LKCore
-    class late_start
+    class main
     oneshot
-    disabled
     user system
     group system log qcom_diag
 
-on property:persist.sys.runin=enable
-    write /sys/class/power_supply/battery/device/BatteryTestStatus 1
-    write /sys/devices/soc.0/qpnp-smbcharger-ed730800/BatteryTestStatus 1
-
-on property:persist.sys.runin=disable
-    write /sys/class/power_supply/battery/device/BatteryTestStatus 0
-    write /sys/devices/soc.0/qpnp-smbcharger-ed730800/BatteryTestStatus 0
-
 # Seemp health service
 service seemp_healthd /system/vendor/bin/seemp_healthd
-    class late_start
+    class main
     user system
     group system
 
 on charger
     wait /dev/block/bootdevice/by-name/system
-    mount ext4 /dev/block/bootdevice/by-name/system /system ro barrier=1
+    mount ext4 /dev/block/bootdevice/by-name/system /system rw barrier=1
     start hvdcp
     setprop persist.sys.usb.config mass_storage
 
 service mdtpd /system/vendor/bin/mdtpd
-    class late_start
+    class main
     user root
     group system radio drmrpc
 
@@ -854,8 +810,6 @@ service qseecomd /system/bin/qseecomd
 service perfd /system/vendor/bin/perfd
    class main
    user root
-   disabled
-   writepid /dev/cpuset/system-background/tasks
 
 service thermal-engine /system/vendor/bin/thermal-engine
    class main
@@ -866,11 +820,11 @@ service thermal-engine /system/vendor/bin/thermal-engine
    group root
 
 service time_daemon /system/bin/time_daemon
-   class late_start
+   class main
    user root
    group root
 
 service audiod /system/bin/audiod
-   class late_start
+   class main
    user system
    group system
